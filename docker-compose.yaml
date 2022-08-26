@@ -1,9 +1,4 @@
 version: '3.9'
-x-default-logging: &logging
-  driver: "json-file"
-  options:
-    max-size: "5m"
-    max-file: "2"
 
 networks:
   default:
@@ -11,65 +6,50 @@ networks:
     driver: bridge
 
 services:
+  ## Open Telemetry Services
   jaeger:
     image: jaegertracing/all-in-one
-    container_name: jaeger
     ports:
-      - "16686:16686"
-      - "14250"
-    logging: *logging
+      - '16686:16686'
+      - '14250'
 
   otelcol:
     image: otel/opentelemetry-collector-contrib:0.56.0
-    container_name: otel-col
-    command: [ "--config=/etc/otelcol-config.yml"]
+    command: ['--config=/etc/otelcol-config.yml']
     volumes:
       - ./config/otelcol-config.yml:/etc/otelcol-config.yml
     ports:
-      - "4317:4317"
-      - "4318:4318"
-      - "9464"
-      - "8888"
+      - '4317:4317'
+      - '4318:4318'
+      - '9464'
+      - '8888'
     depends_on:
       - jaeger
-    logging: *logging
 
-  prometheus:
-    image: quay.io/prometheus/prometheus:v2.34.0
-    container_name: prometheus
-    command:
-      - --web.console.templates=/etc/prometheus/consoles
-      - --web.console.libraries=/etc/prometheus/console_libraries
-      - --storage.tsdb.retention.time=1h
-      - --config.file=/etc/prometheus/prometheus-config.yaml
-      - --storage.tsdb.path=/prometheus
-      - --web.enable-lifecycle
-      - --web.route-prefix=/
-    volumes:
-      - ./config/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
-    ports:
-      - "9090:9090"
-    logging: *logging
-  grafana:
-    image: grafana/grafana:9.1.0
-    container_name: grafana
-    volumes:
-      - ./config/grafana.ini:/etc/grafana/grafana.ini
-      - ./config/provisioning/:/etc/grafana/provisioning/
-    ports:
-      - "3000:3000"
-    logging: *logging
-
+  ## Application Services
   app:
     image: app
-    container_name: app
     build: .
     ports:
-      - "8080:8080"
+      - '3000:3000'
     environment:
-      - PORT=8080
+      - PORT=3000
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=app-backend
     depends_on:
       - otelcol
-    logging: *logging
+      - postgres
+
+  postgres:
+    container_name: postgres
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 1s
+      timeout: 5s
+      retries: 60
